@@ -2,13 +2,13 @@
 #EXPO FLORES
 #
 
+#%%
 import pandas as pd
 import matplotlib.pyplot as plt
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima.model import ARIMA
 
-
-# Cargar datos (ajusta el nombre y separador a tu archivo)
+#%%
 df = pd.read_excel(r"C:\Users\lalas\OneDrive - Universidad Nacional de Colombia\Universidad\9no sem\Econometria II\Repositorio\ECONOMETRIA-II-T\EXPORTACIONES.xlsx", header=0)            # si es el .txt de NOAA: pd.read_csv("oni.txt", sep=r"\s+")
 
 # La columna A tiene las fechas (mes-año) y la G las exportaciones de flores
@@ -26,6 +26,7 @@ df = df.dropna(subset=["Fecha", "Flores"])
 # Crear la serie de tiempo
 serie = df.set_index("Fecha")["Flores"]
 
+#%%
 # Grafica
 plt.figure(figsize=(12,6))
 plt.plot(serie, color="green", linewidth=2)
@@ -35,6 +36,7 @@ plt.ylabel("Valor exportado")
 plt.grid(True)
 plt.show()
 
+#%%
 # ACF y PACF
 fig, ax = plt.subplots(2, 1, figsize=(10, 6))
 plot_acf(serie, lags=36, ax=ax[0])
@@ -42,6 +44,9 @@ plot_pacf(serie, lags=36, ax=ax[1], method="ywm")
 plt.tight_layout()
 plt.show()
 
+#%%
+
+# Ajuste de modelos ARIMA
 modelo1= ARIMA(serie, order=(1,1,1))
 resultado1 = modelo1.fit()
 print(resultado1.summary())
