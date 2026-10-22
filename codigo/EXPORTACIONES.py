@@ -26,13 +26,6 @@ DATA_DIR = BASE_DIR / "datos"
 
 FILE_P = DATA_DIR / "EXPORTACIONES.xlsx"
 
-df = pd.read_excel(FILE_P)
-
-
-# ---
-# ORGANIZACIÓN DE LA BASE
-# ---
-
 #%%
 
 df = df.rename(columns={df.columns[0]: "Fecha", df.columns[6]: "Flores"})
