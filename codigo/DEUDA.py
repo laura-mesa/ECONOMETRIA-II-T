@@ -69,7 +69,7 @@ plt.show()
 # FAC y FACP de la serie original
 fig, ax = plt.subplots(1, 2, figsize=(12, 4))
 plot_acf(df_deuda['deuda_externa'], lags=48, ax=ax[0], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"})
-plot_pacf(df_deuda['deuda_externa'], lags=48, ax=ax[1], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"}, method="ywm", zero=False)
+plot_pacf(df_deuda['deuda_externa'], lags=48, ax=ax[1], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"}, method="ywm")
 limite = 1.96 / np.sqrt(len(df_deuda['deuda_externa']))   # bandas de confianza del 95%
 for eje in ax:
     eje.axhline(limite, color="darkgray", linestyle=":")
@@ -158,6 +158,7 @@ plt.axhline(0, color="red", linestyle="--", linewidth=1)
 plt.box(False)
 plt.show()
 #%%
+# (A)DF sobre la serie diferenciada (d=1)
 # regression='c' porque la serie diferenciada tiene media distinta de cero (crecimiento promedio)
 resultado_adf_d1 = adfuller(serie_diff, regression='c', autolag='AIC')
 
@@ -179,50 +180,222 @@ if resultado_adf_d1[1] < 0.05:
 # 1. IDENTIFICACIÓN
 # ---
 #%% 
-#ESATA ESSSS
-# Se miran la ACF (sugiere el orden q del MA) y la PACF (sugiere el orden p del AR)
-fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-plot_acf(serie_diff, lags=36, ax=ax[0])
-plot_pacf(serie_diff, lags=36, ax=ax[1], method="ywm")
+#FAC y FACP de la serie log diferenciada (d=1)
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+plot_acf(serie_diff, lags=48, ax=ax[0], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"})
+plot_pacf(serie_diff, lags=48, ax=ax[1], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"}, method="ywm")
+limite = 1.96 / np.sqrt(len(serie_diff))   # bandas de confianza del 95%
+for eje in ax:
+    eje.axhline(limite, color="darkgray", linestyle=":")
+    eje.axhline(-limite, color="darkgray", linestyle=":")
+    eje.set_xticks(range(0, 49, 3))
+    eje.set_ylim(-1.1, 1.1)          # eje Y de -1 a 1 (con un pequeño margen)
+ax[1].set_ylabel("Autocorrelación parcial")
+ax[0].set_ylabel("Autocorrelación")
 plt.tight_layout()
 plt.show()
 
 # Los rezagos 1 y 2 salen en el límite de las bandas y no hay picos en 12, 24, 36
 # (no hay estacionalidad). Candidatos: ARIMA(1,1,0), (0,1,1), (2,1,0), (1,1,1)
 
-
 # %%
 # ---
 # 2. ESTIMACIÓN
 # ---
-#%%
-# trend='t' agrega la deriva (el crecimiento promedio de la deuda cada mes)
-modelos = [(1,1,0), (0,1,1), (2,1,0), (1,1,1),
-           (1,1,2), (2,1,2),
-           (0,1,3), (1,1,3), (2,1,3), (3,1,3)]
+# %%
+# # %% Tabla resumen de modelos estimados
 
-print('--- Comparación de modelos (menor AIC / BIC es mejor) ---')
+# Modelos a comparar. Todos llevan constante: trend='t' es la deriva (crecimiento promedio mensual)
+modelos = [(1,1,0), (2,1,0),(1,1,2), (2,1,2), (2,1,3)]
+
+# Se estiman los modelos y se guardan en un diccionario: {nombre del modelo: estimación}
+estimaciones = {}
 for orden in modelos:
-    modelo = ARIMA(serie_log, order=orden, trend='t').fit()
-    significativos = (modelo.pvalues.drop('sigma2') < 0.05).all()   # True si TODOS los coeficientes tienen p < 0.05
-    print(f'ARIMA{orden}   AIC = {modelo.aic:.2f}   BIC = {modelo.bic:.2f}   Todos significativos: {significativos}')
+    nombre = "ARIMA" + str(orden).replace(" ", "")
+    estimaciones[nombre] = ARIMA(serie_log, order=orden, trend='t').fit()
 
-#%%
-# Para ver los coeficientes de un modelo con MA(3), por ejemplo el ARIMA(2,1,3):
-print(ARIMA(serie_log, order=(2,1,3), trend='t').fit().summary())
+nombres_modelos = list(estimaciones.keys())
 
+# Parámetros que se reportan: (nombre en la tabla, nombre que les da statsmodels)
+parametros = [
+    ("constante", "x1"),
+    ("a1", "ar.L1"),
+    ("a2", "ar.L2"),
+    ("b1", "ma.L1"),
+    ("b2", "ma.L2"),
+    ("b3", "ma.L3"),
+]
+
+# Inicialmente la tabla de modelos es una lista de python
+tabla_modelos = []
+
+# Se itera sobre los keys y values del diccionario "estimaciones"
+for nombre, resultado in estimaciones.items():
+    # nombre: es la variable que itera en el nombre de los modelos
+    # resultado: es la variable que itera en la estimación de los modelos
+    params = resultado.params     # Estimaciones de los parámetros del modelo
+    errores = resultado.bse       # Errores estándar de las estimaciones
+    pvalores = resultado.pvalues  # p-valores (para las estrellas)
+
+    # Residuos sin el primero (con d=1 el primer residuo no es real)
+    residuos = resultado.resid[1:]
+
+    fila = {"Modelo": nombre}
+
+    # Estimación, error estándar y p-valor de cada parámetro.
+    # Si el modelo no tiene ese parámetro, queda vacío (np.nan)
+    for etiqueta, nombre_param in parametros:
+        fila[etiqueta] = params.get(nombre_param, np.nan)
+        fila["se_" + etiqueta] = errores.get(nombre_param, np.nan)
+        fila["p_" + etiqueta] = pvalores.get(nombre_param, np.nan)
+
+    # Criterios de información y p-valores de las pruebas sobre los residuos
+    fila["AIC"] = resultado.aic
+    fila["BIC"] = resultado.bic
+    fila["Ljung-Box"] = acorr_ljungbox(residuos, lags=[12])["lb_pvalue"].iloc[0]   # H0: ruido blanco
+    fila["ARCH"] = het_arch(residuos, nlags=12)[1]                                   # H0: varianza constante
+    fila["Jarque-Bera"] = jarque_bera(residuos)[1]                                   # H0: normalidad
+
+    # Se llena una a una la lista, con los resultados de cada modelo (lista de diccionarios)
+    tabla_modelos.append(fila)
+
+# Transformar la lista en un pandas DataFrame (cada fila es un modelo)
+tabla_modelos_te = pd.DataFrame(tabla_modelos).set_index("Modelo")
+
+# Nota: Hasta acá ya tenemos una tabla funcional.
+
+# Estrellas de significancia: *** 1%, ** 5%, * 10%
+def estrellas(p):
+    if p < 0.01:
+        return "***"
+    elif p < 0.05:
+        return "**"
+    elif p < 0.10:
+        return "*"
+    return ""
+
+# Especificar los valores de las estimaciones en la tabla (con estrellas)
+def formato_estimacion(valor, pvalor, decimales=3):
+    if pd.isna(valor):
+        return ""
+    return f"{valor:.{decimales}f}{estrellas(pvalor)}"
+
+# Especificar los valores de los errores estándar en la tabla
+def formato_error_estandar(valor, decimales=3):
+    if pd.isna(valor):
+        return ""
+    return f"({valor:.{decimales}f})"
+
+# Acá se genera la tabla final de publicación.
+
+# Primero la tabla final es una lista
+tabla_publicacion = []
+
+# Parámetros: una fila con la estimación y debajo otra con el error estándar
+for etiqueta, _ in parametros:
+    fila_estimacion = {"Parámetro": etiqueta}
+    fila_error = {"Parámetro": ""}
+
+    for nombre in nombres_modelos:
+        modelo = tabla_modelos_te.loc[nombre]
+        fila_estimacion[nombre] = formato_estimacion(modelo[etiqueta], modelo["p_" + etiqueta])
+        fila_error[nombre] = formato_error_estandar(modelo["se_" + etiqueta])
+
+    tabla_publicacion.append(fila_estimacion)
+    tabla_publicacion.append(fila_error)
+
+# AIC y BIC (1 decimal) y p-valores de las pruebas (3 decimales)
+for medida in ["AIC", "BIC", "Ljung-Box", "ARCH", "Jarque-Bera"]:
+    fila = {"Parámetro": medida}
+    decimales = 1 if medida in ["AIC", "BIC"] else 3
+
+    for nombre in nombres_modelos:
+        fila[nombre] = f"{tabla_modelos_te.loc[nombre, medida]:.{decimales}f}"
+
+    tabla_publicacion.append(fila)
+
+# Genera la tabla final como un Pandas DataFrame
+tabla_modelos_te_publicacion = pd.DataFrame(tabla_publicacion)
+
+# Imprimir la tabla final en formato de texto
+print("\nTabla resumen de modelos estimados")
+print(tabla_modelos_te_publicacion.to_string(index=False))
+print("\nErrores estándar entre paréntesis.")
+print("*, ** y *** indican significancia estadística al 10 %, 5 % y 1 %, respectivamente.")
+print("Ljung-Box (12 rezagos), ARCH (12 rezagos) y Jarque-Bera: p-valores. p > 0.05 indica que no se rechaza H0 al 5 %.")
+
+# %% 
+# # Exportar la tabla como imagen (PNG)
+
+# Letra estilo publicación (STIX, parecida a la de LaTeX), viene incluida con matplotlib
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["font.serif"] = ["STIXGeneral"]
+plt.rcParams["mathtext.fontset"] = "stix"
+
+# Pone las estrellas como superíndice: "0.009***" -> "0.009$^{***}$"
+def estrellas_imagen(texto):
+    n = texto.count("*")
+    if n == 0:
+        return texto
+    return texto.replace("*", "") + "$^{" + "*" * n + "}$"
+
+datos = tabla_modelos_te_publicacion
+filas_parametros = len(parametros) * 2     # filas de parámetros (estimación + error estándar)
+ancho = len(datos.columns) + 0.5           # ancho total de la tabla (1 unidad por columna)
+
+fig, ax = plt.subplots(figsize=(16, 7))
+ax.axis("off")                             # sin ejes, solo la tabla
+ax.set_xlim(0, ancho)
+ax.set_ylim(len(datos) + 1, -2)            # eje Y invertido: la fila 0 queda arriba
+
+# Título
+ax.text(ancho / 2, -1.5, "Modelos ARIMA estimados para la deuda de Colombia", ha="center", fontsize=15)
+
+# Fila de nombres de los modelos
+for j, nombre in enumerate(nombres_modelos):
+    ax.text(j + 1.5, 0, nombre, ha="center", va="center", fontsize=13)
+
+# Contenido: primera columna a la izquierda, las demás centradas
+for i, fila in datos.iterrows():
+    y = i + 1
+    for j, celda in enumerate(fila):
+        if j == 0:
+            ax.text(0, y, celda, ha="left", va="center", fontsize=12)
+        else:
+            ax.text(j + 0.5, y, estrellas_imagen(celda), ha="center", va="center", fontsize=12)
+
+# Líneas: gruesa arriba, delgadas en el medio, gruesa abajo
+ax.plot([0, ancho], [-0.6, -0.6], color="black", linewidth=1.5)
+ax.plot([0, ancho], [0.5, 0.5], color="black", linewidth=0.8)
+ax.plot([0, ancho], [filas_parametros + 0.5, filas_parametros + 0.5], color="black", linewidth=0.8)
+ax.plot([0, ancho], [len(datos) + 0.5, len(datos) + 0.5], color="black", linewidth=1.5)
+
+# Nota debajo de la tabla
+nota = ("Nota: estimaciones por máxima verosimilitud con statsmodels ARIMA(); errores estándar entre paréntesis. "
+        "La constante es la deriva del modelo.\n"
+        "Para Ljung-Box (12 rezagos), ARCH (12 rezagos) y Jarque-Bera se reportan p-valores.\n"
+        "$^{*}$p < 0.10; $^{**}$p < 0.05; $^{***}$p < 0.01. Una, dos y tres estrellas indican significancia estadística "
+        "a los niveles del 10 %, 5 % y 1 %, respectivamente.")
+ax.text(0, len(datos) + 0.9, nota, ha="left", va="top", fontsize=9)
+
+plt.show()
+
+plt.rcdefaults()   # vuelve a la letra normal para los siguientes gráficos
 #%%
-# Modelo elegido: ARIMA(2,1,0) con deriva -> menor AIC entre los modelos con TODOS
+# Modelo elegido------
+# ARIMA(2,1,0) con deriva -> menor AIC entre los modelos con TODOS
 # los coeficientes significativos (su BIC es casi igual al del ARIMA(1,1,0)).
-# Los modelos con MA(3) tienen BIC más alto y coeficientes NO significativos
-# (sobreparametrización), por eso se descartan
-# Modelo elegido: ARIMA(2,1,0) con deriva -> menor AIC y todos los coeficientes significativos
-
 modelo_final = ARIMA(serie_log, order=(2,1,0), trend='t').fit()
 print(modelo_final.summary())
-
 # En la tabla, revisar la columna P>|z|: todos los coeficientes deben tener p-valor < 0.05
 
+#Tabla de resumen ARIMA(2,1,0)
+texto = str(modelo_final.summary())   # el resumen convertido en texto
+
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.axis("off")                        # sin ejes, solo el texto
+ax.text(0, 1, texto, family="monospace", fontsize=9, va="top", transform=ax.transAxes)
+plt.show()
 
 # %%
 # ---
@@ -231,7 +404,7 @@ print(modelo_final.summary())
 #%%
 # Se quita el primer residuo: con d=1 el primer dato no tiene diferencia y su residuo no es real
 residuos = modelo_final.resid[1:]
-
+# Gráfica de los residuos del modelo ARIMA(2,1,0)
 plt.figure(figsize=(12,4))
 plt.plot(residuos, color="gray")
 plt.axhline(0, color='red', linestyle='--')
@@ -240,13 +413,23 @@ plt.grid(True)
 plt.show()
 
 #%%
-fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-plot_acf(residuos, lags=36, ax=ax[0])
-plot_pacf(residuos, lags=36, ax=ax[1], method="ywm")
+#FAC y FACP de los residuos del modelo ARIMA(2,1,0)
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+plot_acf(residuos, lags=48, ax=ax[0], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"})
+plot_pacf(residuos, lags=48, ax=ax[1], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"}, method="ywm")
+limite = 1.96 / np.sqrt(len(residuos))   # bandas de confianza del 95%
+for eje in ax:
+    eje.axhline(limite, color="darkgray", linestyle=":")
+    eje.axhline(-limite, color="darkgray", linestyle=":")
+    eje.set_xticks(range(0, 49, 3))
+    eje.set_ylim(-1.1, 1.1)          # eje Y de -1 a 1 (con un pequeño margen)
+ax[1].set_ylabel("Autocorrelación parcial")
+ax[0].set_ylabel("Autocorrelación")
 plt.tight_layout()
 plt.show()
 
 #%%
+#Histograma de los residuos del modelo ARIMA(2,1,0)
 plt.figure(figsize=(8,4))
 plt.hist(residuos, bins=30, color="steelblue", edgecolor="black")
 plt.title("Histograma de los residuos")
@@ -296,14 +479,17 @@ pron_prueba = modelo_prueba.forecast(steps=12)
 real = np.exp(prueba)            # se devuelve el logaritmo a pesos con exp()
 estimado = np.exp(pron_prueba)
 mape = np.mean(np.abs((real - estimado) / real)) * 100
-print(f'MAPE en los últimos 12 meses: {mape:.2f}%')
+print(f'MAPE en los últimos 12 meses: {mape:.2f}%') #Justificar que es MAPE
 
+# Gráfica de la evaluación del pronóstico
 plt.figure(figsize=(12,6))
-plt.plot(np.exp(serie_log[-48:]), color="green", label="Real")
+plt.plot(np.exp(serie_log[-48:]), color="green", label="Real", linewidth=2)
 plt.plot(estimado, color="orange", linestyle="--", label="Pronóstico (prueba)")
-plt.title("Evaluación del modelo: últimos 12 meses", fontsize=14)
-plt.legend()
-plt.grid(True)
+plt.title("Evaluación del modelo: últimos 12 meses", fontsize=15, loc="left", fontweight="bold")
+plt.xlabel("Año-mes ")
+plt.ylabel("Log de la deuda")
+plt.grid(axis="y", alpha=0.3)
+plt.box(False)
 plt.show()
 
 #%%
@@ -320,17 +506,16 @@ tabla_pronostico = pd.DataFrame({
 })
 print(tabla_pronostico.round(0).astype(int))
 
+#Gráfica del pronóstico de la deuda
 plt.figure(figsize=(12,6))
-plt.plot(np.exp(serie_log), color="green", label="Deuda observada")
+plt.plot(np.exp(serie_log), color="green", label="Deuda observada", linewidth=2)
 plt.plot(pron_media, color="red", label="Pronóstico")
 plt.fill_between(pron_ic.index, pron_ic.iloc[:, 0], pron_ic.iloc[:, 1],
                  color="red", alpha=0.2, label="IC 95%")
-plt.title("Pronóstico de la Deuda - ARIMA(2,1,0) con deriva", fontsize=14)
+plt.title("Pronóstico de la Deuda - ARIMA(2,1,0)", fontsize=15, loc="left", fontweight="bold")
 plt.xlabel("Año")
 plt.ylabel("Valor de la deuda")
 plt.legend()
-plt.grid(True)
+plt.grid(axis="y", alpha=0.3)
+plt.box(False)
 plt.show()
-
-
-# %%
