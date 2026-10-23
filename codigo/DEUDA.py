@@ -18,7 +18,7 @@ from statsmodels.stats.diagnostic import het_arch
 from statsmodels.stats.diagnostic import acorr_ljungbox      # NUEVA: autocorrelación de residuos
 from statsmodels.stats.stattools import jarque_bera          # NUEVA: normalidad de residuos
 
-
+#%%
 # ---
 # BASE DE DATOS
 # ---
@@ -37,11 +37,8 @@ df = pd.read_excel(FILE_P, header=None, skiprows=3)
 # ---
 
 #%%
-# OJO: en el Excel la columna 3 es "Deuda total (COP millones)".
-#      Deuda externa está en la columna 2 (COP millones) o en la 5 (USD millones).
 datos_deuda = df.iloc[:, 3].dropna().values
 
-# CORREGIDO: el Excel empieza en junio de 2001 (no en enero de 2002) y termina en junio de 2024
 fechas = pd.date_range(start='2001-06-01', periods=len(datos_deuda), freq='MS') # MS = Month Start
 
 df_deuda = pd.DataFrame({
@@ -53,31 +50,39 @@ df_deuda['deuda_externa'] = pd.to_numeric(df_deuda['deuda_externa'], errors='coe
 
 # %%
 ## ----
-# BOX-JENKINS: ANÁLISIS 
+# BOX-JENKINS: TRANSFORMACIONES
 # ---
 
 #%%
+#%%
+# Serie Deuda de Colombia (2001-2024)
 plt.figure(figsize=(12,6))
-plt.plot(df_deuda['Fecha'], df_deuda['deuda_externa'], color="green", linewidth=2)
-plt.title("Deuda de Colombia (2001-2024)", fontsize=14)
+plt.plot(df_deuda['Fecha'], df_deuda['deuda_externa'] / 1_000_000, color="#2a78d6", linewidth=2)
+plt.title("Deuda de Colombia, 2001-2024", fontsize=15, loc="left", fontweight="bold")
 plt.xlabel("Año")
-plt.ylabel("Valor de la deuda")
-plt.grid(True)
+plt.ylabel("Billones de pesos (COP)")
+plt.grid(axis="y", alpha=0.3)
+plt.box(False)
 plt.show()
 
-#%%
-fig, ax = plt.subplots(2, 1, figsize=(10, 6))
-plot_acf(df_deuda['deuda_externa'], lags=36, ax=ax[0])
-plot_pacf(df_deuda['deuda_externa'], lags=36, ax=ax[1], method="ywm")
+# %%
+# FAC y FACP de la serie original
+fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+plot_acf(df_deuda['deuda_externa'], lags=48, ax=ax[0], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"})
+plot_pacf(df_deuda['deuda_externa'], lags=48, ax=ax[1], alpha=None, title="", marker="", vlines_kwargs={"colors": "green"}, method="ywm", zero=False)
+limite = 1.96 / np.sqrt(len(df_deuda['deuda_externa']))   # bandas de confianza del 95%
+for eje in ax:
+    eje.axhline(limite, color="darkgray", linestyle=":")
+    eje.axhline(-limite, color="darkgray", linestyle=":")
+    eje.set_xticks(range(0, 49, 3))
+    eje.set_ylim(-1.1, 1.1)          # eje Y de -1 a 1 (con un pequeño margen)
+ax[1].set_ylabel("Autocorrelación parcial")
+ax[0].set_ylabel("Autocorrelación")
 plt.tight_layout()
 plt.show()
 
-
-# ---
-# ESTABILIZACIÓN DE VARIANZA
-# ---
-
 #%%
+# Prueba ARCH, para aplicar log
 stat, pval, f_stat, f_pval = het_arch(df_deuda['deuda_externa'], nlags=12)
 
 print('--- Prueba de Heterocedasticidad ARCH (Serie Original) ---')
@@ -93,18 +98,22 @@ else:
     print("\nConclusión: NO se rechaza la hipótesis nula. No hay evidencia suficiente de Heterocedasticidad.")
 
 #%%
+# logaritmo de la serie
 serie_log = np.log(df_deuda['deuda_externa']) #TRANFORMACIÓN
-serie_log.index = fechas  # NUEVO: la serie lleva las fechas, así el pronóstico sale con fechas
+serie_log.index = fechas  
 
+# Gráfica de la serie en logaritmo
 plt.figure(figsize=(12,6))
-plt.plot(serie_log, color="purple", linewidth=1.5)
-plt.title("Serie con Logaritmo ", fontsize=14)
+plt.plot(serie_log, color="purple", linewidth=2)
+plt.title("Serie con Logaritmo", fontsize=15, loc="left", fontweight="bold")
 plt.xlabel("Año")
 plt.ylabel("Log de la deuda")
-plt.grid(True)
+plt.grid(axis="y", alpha=0.3)
+plt.box(False)
 plt.show()
 
 # %%
+#Verificar ARCH en serie logarítmica
 stat, pval, f_stat, f_pval = het_arch(serie_log, nlags=12)
 
 print('--- Prueba de Heterocedasticidad ARCH (Serie en Logaritmo) ---')
@@ -119,10 +128,7 @@ else:
     print("\nConclusión: NO se rechaza la hipótesis nula. No hay evidencia suficiente de Heterocedasticidad.")
 
 # %%
-# ---
-# ESTACIONARIEDAD
-# ---
-#%%
+# Verificar ESTACIONARIDAD de la serie logarítmica
 resultado_adf = adfuller(serie_log, regression='ct', autolag='AIC')
 
 print('--- Resultados de la Prueba ADF ---')
@@ -134,24 +140,23 @@ print(f'Observaciones usadas: {resultado_adf[3]}')
 print('\n--- Valores Críticos ---')
 for key, value in resultado_adf[4].items():
     print(f'  {key}: {value:.4f}')
-
 # p-valor > 0.05 -> la serie en log tiene raíz unitaria -> hay que diferenciar
 
 
 #%%
-# CORREGIDO: antes se hacía .diff().diff(1), que son DOS diferencias regulares (d=2),
-# no una estacional. Con UNA diferencia (d=1) la serie ya es estacionaria.
-serie_diff = serie_log.diff().dropna() #TRANSFORMACIÓN: Diferenciación regular (d=1)
+#Serie log diferenciada (d=1)
+serie_diff = serie_log.diff().dropna() 
 
+# Grafica de serie diferenciada I(1)
 plt.figure(figsize=(12,6))
-plt.plot(serie_diff, color="purple", linewidth=2)
-plt.title("Deuda - Primera diferencia del logaritmo (d=1)", fontsize=14)
+plt.plot(serie_diff, color="grey", linewidth=2)
+plt.title("Deuda - Primera diferencia del logaritmo (d=1)", fontsize=15, loc="left", fontweight="bold")
 plt.xlabel("Año")
 plt.ylabel("Variación mensual (log)")
-plt.grid(True)
-plt.axhline(0, color='red', linestyle='--')
+plt.grid(axis="y", alpha=0.3)
+plt.axhline(0, color="red", linestyle="--", linewidth=1)
+plt.box(False)
 plt.show()
-
 #%%
 # regression='c' porque la serie diferenciada tiene media distinta de cero (crecimiento promedio)
 resultado_adf_d1 = adfuller(serie_diff, regression='c', autolag='AIC')
@@ -173,7 +178,8 @@ if resultado_adf_d1[1] < 0.05:
 # ---
 # 1. IDENTIFICACIÓN
 # ---
-#%%
+#%% 
+#ESATA ESSSS
 # Se miran la ACF (sugiere el orden q del MA) y la PACF (sugiere el orden p del AR)
 fig, ax = plt.subplots(2, 1, figsize=(10, 6))
 plot_acf(serie_diff, lags=36, ax=ax[0])
@@ -233,12 +239,14 @@ plt.title("Residuos del modelo ARIMA(2,1,0)", fontsize=14)
 plt.grid(True)
 plt.show()
 
+#%%
 fig, ax = plt.subplots(2, 1, figsize=(10, 6))
 plot_acf(residuos, lags=36, ax=ax[0])
 plot_pacf(residuos, lags=36, ax=ax[1], method="ywm")
 plt.tight_layout()
 plt.show()
 
+#%%
 plt.figure(figsize=(8,4))
 plt.hist(residuos, bins=30, color="steelblue", edgecolor="black")
 plt.title("Histograma de los residuos")
