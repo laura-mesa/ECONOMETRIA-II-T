@@ -54,7 +54,6 @@ df_deuda['deuda_externa'] = pd.to_numeric(df_deuda['deuda_externa'], errors='coe
 # ---
 
 #%%
-#%%
 # Serie Deuda de Colombia (2001-2024)
 plt.figure(figsize=(12,6))
 plt.plot(df_deuda['Fecha'], df_deuda['deuda_externa'] / 1_000_000, color="#2a78d6", linewidth=2)
@@ -519,3 +518,5 @@ plt.legend()
 plt.grid(axis="y", alpha=0.3)
 plt.box(False)
 plt.show()
+
+# %%
