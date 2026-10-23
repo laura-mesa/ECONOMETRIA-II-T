@@ -531,7 +531,7 @@ ax.axis("off")  # sin ejes, solo el texto
 ax.text(0, 1, texto, family="monospace", fontsize=9, va="top", transform=ax.transAxes)
 plt.show()
 
-# ▲ Y_t = 0.009  -0.121  ▲ Y_t-1  +0.123  ▲ Y_t-2
+# ▲ ln(D_t) = 0.009  -0.121  ▲ (D_t-2)  +0.123  ▲ (D_t-1)
 
 # Al trabajar sobre diferenciales se observa en los coeficientes el impacto que al
 # momento actual, repercute la aceleración del aumento de la deuda
