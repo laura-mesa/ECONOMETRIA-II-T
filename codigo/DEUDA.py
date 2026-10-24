@@ -614,14 +614,38 @@ plt.show()
 # 3.2 Pruebas formales del Modelo ARIMA (2,1,0)
 
 
-# a)Ruido blanco: Ljung-Box. H0: los residuos NO están autocorrelacionados
-ljung = acorr_ljungbox(residuos, lags=[12, 24])
+# a)Ruido blanco: Ljung-Box para 4, 8 y 12 autocorrelaciones
+# H0: los residuos NO están autocorrelacionados
+
+Ljung_lista = []
+
+# 4 autocorrelaciones
+ljung4 = acorr_ljungbox(residuos, lags=[4])
 print("--- Prueba de Ljung-Box ---")
-print(ljung)
-if (ljung["lb_pvalue"] > 0.05).all():
-    print("Conclusión: NO se rechaza H0. Los residuos son ruido blanco.\n")
-else:
-    print("Conclusión: Se rechaza H0. Queda autocorrelación en los residuos.\n")
+print(ljung4)
+Ljung_lista.append(ljung4["lb_pvalue"])
+
+
+# 8 autocorrelaciones
+ljung8 = acorr_ljungbox(residuos, lags=[8])
+print("--- Prueba de Ljung-Box ---")
+print(ljung8)
+Ljung_lista.append(ljung8["lb_pvalue"])
+
+
+# 12 autocorrelaciones
+ljung12 = acorr_ljungbox(residuos, lags=[12])
+print("--- Prueba de Ljung-Box ---")
+print(ljung12)
+Ljung_lista.append(ljung12["lb_pvalue"])
+
+for valores in Ljung_lista:
+    if (valores > 0.05).all():
+        print(
+            f"NO se rechaza H0 Los residuos son ruido blanco en la prueba L~B respectivamente"
+        )
+    else:
+        print("Se rechaza H0, autocorrelación")
 
 
 # b)Normalidad: Jarque-Bera. H0: los residuos son normales
