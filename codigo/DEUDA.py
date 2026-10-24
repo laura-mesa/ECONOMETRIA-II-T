@@ -76,7 +76,7 @@ plt.plot(
 )
 plt.title("Deuda de Colombia, 2001-2024", fontsize=15, loc="left", fontweight="bold")
 plt.xlabel("Año")
-plt.ylabel("Billones de pesos (COP)")
+plt.ylabel("Millones de pesos (COP)")
 plt.grid(axis="y", alpha=0.3)
 plt.box(False)
 plt.show()
@@ -286,11 +286,8 @@ plt.show()
 
 # 1.b  Creación tabla de resumen de modelos
 # ~~~~~~~~~~~~~~~~~~~~~~~~~
-
-
 # Modelos a comparar. Todos llevan constante: trend='t' es la deriva (crecimiento promedio mensual)
 modelos = [(1, 1, 0), (2, 1, 0), (1, 1, 2), (2, 1, 2), (2, 1, 3)]
-
 
 # Se estiman los modelos y se guardan en un diccionario: {nombre del modelo: estimación}
 estimaciones = {}
@@ -315,8 +312,6 @@ tabla_modelos = []
 
 # Se itera sobre los keys y values del diccionario "estimaciones"
 for nombre, resultado in estimaciones.items():
-    # nombre: es la variable que itera en el nombre de los modelos
-    # resultado: es la variable que itera en la estimación de los modelos
     params = resultado.params  # Estimaciones de los parámetros del modelo
     errores = resultado.bse  # Errores estándar de las estimaciones
     pvalores = resultado.pvalues  # p-valores (para las estrellas)
@@ -327,7 +322,6 @@ for nombre, resultado in estimaciones.items():
     fila = {"Modelo": nombre}
 
     # Estimación, error estándar y p-valor de cada parámetro.
-    # Si el modelo no tiene ese parámetro, queda vacío (np.nan)
     for etiqueta, nombre_param in parametros:
         fila[etiqueta] = params.get(nombre_param, np.nan)
         fila["se_" + etiqueta] = errores.get(nombre_param, np.nan)
@@ -336,20 +330,21 @@ for nombre, resultado in estimaciones.items():
     # Criterios de información y p-valores de las pruebas sobre los residuos
     fila["AIC"] = resultado.aic
     fila["BIC"] = resultado.bic
-    fila["Ljung-Box"] = acorr_ljungbox(residuos, lags=[12])["lb_pvalue"].iloc[
-        0
-    ]  # H0: ruido blanco
+    
+    # --- NUEVO: Calcular Ljung-Box para 4, 8 y 12 rezagos ---
+    fila["LB(4)"] = acorr_ljungbox(residuos, lags=[4])["lb_pvalue"].iloc[0]
+    fila["LB(8)"] = acorr_ljungbox(residuos, lags=[8])["lb_pvalue"].iloc[0]
+    fila["LB(12)"] = acorr_ljungbox(residuos, lags=[12])["lb_pvalue"].iloc[0]
+    
+    # Pruebas ARCH y Jarque-Bera
     fila["ARCH"] = het_arch(residuos, nlags=12)[1]  # H0: varianza constante
     fila["Jarque-Bera"] = jarque_bera(residuos)[1]  # H0: normalidad
 
-    # Se llena una a una la lista, con los resultados de cada modelo (lista de diccionarios)
+    # Se llena una a una la lista, con los resultados de cada modelo
     tabla_modelos.append(fila)
 
 # Transformar la lista en un pandas DataFrame (cada fila es un modelo)
 tabla_modelos_te = pd.DataFrame(tabla_modelos).set_index("Modelo")
-
-# Nota: Hasta acá ya tenemos una tabla funcional.
-
 
 # Estrellas de significancia: *** 1%, ** 5%, * 10%
 def estrellas(p):
@@ -361,13 +356,11 @@ def estrellas(p):
         return "*"
     return ""
 
-
 # Especificar los valores de las estimaciones en la tabla (con estrellas)
 def formato_estimacion(valor, pvalor, decimales=3):
     if pd.isna(valor):
         return ""
     return f"{valor:.{decimales}f}{estrellas(pvalor)}"
-
 
 # Especificar los valores de los errores estándar en la tabla
 def formato_error_estandar(valor, decimales=3):
@@ -375,10 +368,7 @@ def formato_error_estandar(valor, decimales=3):
         return ""
     return f"({valor:.{decimales}f})"
 
-
 # Acá se genera la tabla final de publicación.
-
-# Primero la tabla final es una lista
 tabla_publicacion = []
 
 # Parámetros: una fila con la estimación y debajo otra con el error estándar
@@ -396,8 +386,11 @@ for etiqueta, _ in parametros:
     tabla_publicacion.append(fila_estimacion)
     tabla_publicacion.append(fila_error)
 
+# --- MODIFICADO: Añadimos las nuevas medidas a la lista ---
 # AIC y BIC (1 decimal) y p-valores de las pruebas (3 decimales)
-for medida in ["AIC", "BIC", "Ljung-Box", "ARCH", "Jarque-Bera"]:
+medidas = ["AIC", "BIC", "LB(4)", "LB(8)", "LB(12)", "ARCH", "Jarque-Bera"]
+
+for medida in medidas:
     fila = {"Parámetro": medida}
     decimales = 1 if medida in ["AIC", "BIC"] else 3
 
@@ -417,17 +410,15 @@ print(
     "*, ** y *** indican significancia estadística al 10 %, 5 % y 1 %, respectivamente."
 )
 print(
-    "Ljung-Box (12 rezagos), ARCH (12 rezagos) y Jarque-Bera: p-valores. p > 0.05 indica que no se rechaza H0 al 5 %."
+    "LB(x) = Ljung-Box con x rezagos. ARCH y Jarque-Bera: p-valores. p > 0.05 indica que no se rechaza H0 al 5 %."
 )
 
-# %%
 # # Exportar la tabla como imagen (PNG)
 
 # Letra estilo publicación (STIX, parecida a la de LaTeX), viene incluida con matplotlib
 plt.rcParams["font.family"] = "serif"
 plt.rcParams["font.serif"] = ["STIXGeneral"]
 plt.rcParams["mathtext.fontset"] = "stix"
-
 
 # Pone las estrellas como superíndice: "0.009***" -> "0.009$^{***}$"
 def estrellas_imagen(texto):
@@ -436,14 +427,14 @@ def estrellas_imagen(texto):
         return texto
     return texto.replace("*", "") + "$^{" + "*" * n + "}$"
 
-
 datos = tabla_modelos_te_publicacion
 filas_parametros = (
     len(parametros) * 2
 )  # filas de parámetros (estimación + error estándar)
 ancho = len(datos.columns) + 0.5  # ancho total de la tabla (1 unidad por columna)
 
-fig, ax = plt.subplots(figsize=(16, 7))
+# Ajusté un poco el tamaño de la figura para que quepan las columnas nuevas
+fig, ax = plt.subplots(figsize=(18, 7)) 
 ax.axis("off")  # sin ejes, solo la tabla
 ax.set_xlim(0, ancho)
 ax.set_ylim(len(datos) + 1, -2)  # eje Y invertido: la fila 0 queda arriba
@@ -488,11 +479,11 @@ ax.plot(
 )
 ax.plot([0, ancho], [len(datos) + 0.5, len(datos) + 0.5], color="black", linewidth=1.5)
 
-# Nota debajo de la tabla
+# --- MODIFICADO: Ajuste en la nota para mencionar las 3 pruebas de Ljung-Box ---
 nota = (
     "Nota: estimaciones por máxima verosimilitud con statsmodels ARIMA(); errores estándar entre paréntesis. "
     "La constante es la deriva del modelo.\n"
-    "Para Ljung-Box (12 rezagos), ARCH (12 rezagos) y Jarque-Bera se reportan p-valores.\n"
+    "Para Ljung-Box (4, 8 y 12 rezagos), ARCH (12 rezagos) y Jarque-Bera se reportan p-valores.\n"
     "$^{*}$p < 0.10; $^{**}$p < 0.05; $^{***}$p < 0.01. Una, dos y tres estrellas indican significancia estadística "
     "a los niveles del 10 %, 5 % y 1 %, respectivamente."
 )
@@ -500,18 +491,17 @@ ax.text(0, len(datos) + 0.9, nota, ha="left", va="top", fontsize=9)
 
 plt.show()
 
-plt.rcdefaults()  # vuelve a la letra normal para los siguientes gráficos
-
+plt.rcdefaults()
 
 # Análisis resultados de la tabla
 # ~~~~~~~~~~~~~~~~
 
 
-# Modelo elegido: ARIMA(2,1,0) con deriva
+# Modelo elegido: ARIMA(1,1,0) con deriva
 # ya que tiene el menor AIC entre los modelos con TODOS
 # los coeficientes significativos (su BIC es casi igual al del ARIMA(1,1,0))
 
-modelo_final = ARIMA(serie_log, order=(2, 1, 0), trend="t").fit()
+modelo_final = ARIMA(serie_log, order=(1, 1, 0), trend="t").fit()
 print(modelo_final.summary())
 
 # En la tabla, revisar la columna P>|z|: todos los coeficientes deben tener p-valor < 0.05
@@ -523,7 +513,7 @@ print(modelo_final.summary())
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-# Tabla de resumen ARIMA(2,1,0)
+# Tabla de resumen ARIMA(1,1,0)
 texto = str(modelo_final.summary())  # el resumen convertido en texto
 
 fig, ax = plt.subplots(figsize=(10, 6))
@@ -531,7 +521,7 @@ ax.axis("off")  # sin ejes, solo el texto
 ax.text(0, 1, texto, family="monospace", fontsize=9, va="top", transform=ax.transAxes)
 plt.show()
 
-# ▲ ln(D_t) = 0.009  -0.121  ▲ (D_t-2)  +0.123  ▲ (D_t-1)
+# ▲ ln(D_t) = 0.009  -0.144  ▲ (D_t-1) 
 
 # Al trabajar sobre diferenciales se observa en los coeficientes el impacto que al
 # momento actual, repercute la aceleración del aumento de la deuda
@@ -548,12 +538,12 @@ plt.show()
 # ~~~~~~~~~~
 
 
-# Gráfica de los residuos del modelo ARIMA(2,1,0) / sin incluir el 1er residuo
+# Gráfica de los residuos del modelo ARIMA(1,1,0) / sin incluir el 1er residuo
 residuos = modelo_final.resid[1:]
 plt.figure(figsize=(12, 4))
 plt.plot(residuos, color="gray")
 plt.axhline(0, color="red", linestyle="--")
-plt.title("Residuos del modelo ARIMA(2,1,0)", fontsize=14)
+plt.title("Residuos del modelo ARIMA(1,1,0)", fontsize=14)
 plt.grid(True)
 
 plt.figtext(
@@ -571,7 +561,7 @@ plt.tight_layout(rect=[0, 0.04, 1, 1])
 plt.show()
 
 
-# FAC y FACP de los residuos del modelo ARIMA(2,1,0)
+# FAC y FACP de los residuos del modelo ARIMA(1,1,0)
 fig, ax = plt.subplots(1, 2, figsize=(12, 4))
 plot_acf(
     residuos,
@@ -604,14 +594,14 @@ plt.tight_layout()
 plt.show()
 
 
-# Histograma de los residuos del modelo ARIMA(2,1,0)
+# Histograma de los residuos del modelo ARIMA(1,1,0)
 plt.figure(figsize=(8, 4))
 plt.hist(residuos, bins=30, color="steelblue", edgecolor="black")
 plt.title("Histograma de los residuos")
 plt.show()
 
 
-# 3.2 Pruebas formales del Modelo ARIMA (2,1,0)
+# 3.2 Pruebas formales del Modelo ARIMA (1,1,0)
 
 
 # a)Ruido blanco: Ljung-Box para 4, 8 y 12 autocorrelaciones
@@ -675,13 +665,13 @@ else:
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 
-# Pronóstico preliminar de PRUEBA: como estima el MODELO ARIMA(2,1,0) el año transcurrido 2024.
+# Pronóstico preliminar de PRUEBA: como estima el MODELO ARIMA(1,1,0) el año transcurrido 2024.
 # ~~~~~~~~~~~~~~~~~
 
 entrenamiento = serie_log[:-12]
 prueba = serie_log[-12:]
 
-modelo_prueba = ARIMA(entrenamiento, order=(2, 1, 0), trend="t").fit()
+modelo_prueba = ARIMA(entrenamiento, order=(1, 1, 0), trend="t").fit()
 pron_prueba = modelo_prueba.forecast(steps=12)
 
 real = np.exp(prueba)  # se devuelve el logaritmo a pesos con exp()
@@ -737,7 +727,7 @@ plt.fill_between(
     label="IC 95%",
 )
 plt.title(
-    "Pronóstico de la Deuda - ARIMA(2,1,0)", fontsize=15, loc="left", fontweight="bold"
+    "Pronóstico de la Deuda - ARIMA(1,1,0)", fontsize=15, loc="left", fontweight="bold"
 )
 plt.xlabel("Año")
 plt.ylabel("Valor de la deuda")
