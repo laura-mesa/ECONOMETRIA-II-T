@@ -4,6 +4,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
+from scipy.stats import norm
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.tsa.stattools import adfuller
@@ -595,9 +596,20 @@ plt.show()
 
 
 # Histograma de los residuos del modelo ARIMA(1,1,0)
+mu, sigma = residuos.mean(), residuos.std()
 plt.figure(figsize=(8, 4))
-plt.hist(residuos, bins=30, color="steelblue", edgecolor="black")
+plt.hist(residuos, bins=30, density=True,
+         color="steelblue", edgecolor="black")
+
+x = np.linspace(residuos.min(), residuos.max(), 100)
+plt.plot(x, norm.pdf(x, mu, sigma),
+         color="red", linewidth=2,
+         label="Distribución normal")
+
 plt.title("Histograma de los residuos")
+plt.xlabel("Residuos")
+plt.ylabel("Densidad")
+plt.legend()
 plt.show()
 
 
